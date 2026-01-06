@@ -1,0 +1,30 @@
+name: Build EXE
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' 
+        
+    - name: Install Dependencies
+      run: |
+        pip install customtkinter requests python-docx openai nuitka zstandard
+        
+    - name: Compile with Nuitka
+      # 注意：这里添加了 --assume-yes-for-downloads 自动确认下载编译器
+      run: |
+        python -m nuitka --standalone --onefile --enable-plugin=tk-inter --include-package=customtkinter --include-package=docx --windows-console-mode=disable --assume-yes-for-downloads --output-dir=build 2.py
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: XimenWriter-EXE
+        path: build/*.exe
