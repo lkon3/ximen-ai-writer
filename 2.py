@@ -623,7 +623,8 @@ class AiWriterApp(ctk.CTk):
 
         self.title("西门写作 Pro")
         self.geometry("1600x900")
-        self.resizable(False, False) 
+        self.minsize(1600, 900)
+        self.maxsize(1600, 900)
         self.configure(fg_color=self.theme['bg'])
 
         self.current_user = None; self.account_settings_window = None; self.cloud_books = set()
@@ -656,8 +657,13 @@ class AiWriterApp(ctk.CTk):
         self.create_menu()
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.bind("<Map>", self._on_map)
         self.after(100, self._update_context_controls_state)
         self.after(100, lambda: self.clear_chapter_view(clear_book_selection=True))
+    
+    def _on_map(self, event=None):
+        """Handles the window becoming visible (e.g., de-minimizing)."""
+        self.update()
 
     def update_login_config(self, email, password, remember_pwd):
         """Saves the user's login info based on their choices."""
@@ -832,18 +838,22 @@ class AiWriterApp(ctk.CTk):
 
     def _update_generation_controls(self):
         if not self.current_user: return
-        is_member = self.current_user.get('is_member', False)
-        self.member_model_label.pack_forget(); self.system_model_menu.pack_forget()
+
+        membership_level = self.current_user.get('membership_level')
+        has_api_access = membership_level in ['standard', 'premium']
+
+        self.member_model_label.pack_forget()
+        self.system_model_menu.pack_forget()
         
         models = []
-        if is_member:
+        if has_api_access:
             models.append("自定义模型 (全局设置)")
         
         if self.system_models:
             for m in self.system_models:
                 models.append(m.get('display_name', '未知模型'))
         else:
-             if not is_member: models.append("无可用模型")
+             if not has_api_access: models.append("无可用模型")
 
         self.system_model_menu.configure(values=models)
         if models: self.system_model_var.set(models[0])
@@ -893,13 +903,20 @@ class AiWriterApp(ctk.CTk):
 
     def _update_user_status_ui(self):
         if not self.current_user: return
-        is_member = self.current_user.get('is_member', False)
-        if is_member:
-            self.membership_status_label.configure(text=f"👑 会员 (到期: {self.current_user.get('member_expiry_date','N/A')})", text_color="#FBBF24")
+        
+        level = self.current_user.get('membership_level')
+        expiry_date = self.current_user.get('member_expiry_date', 'N/A')
+        
+        if level == 'premium':
+            self.membership_status_label.configure(text=f"👑 高级会员 (到期: {expiry_date})", text_color="#FBBF24")
             self.word_balance_label.configure(text="∞ 无限字数")
+        elif level == 'standard':
+            self.membership_status_label.configure(text=f"⭐ 会员 (到期: {expiry_date})", text_color="#818CF8")
+            self.word_balance_label.configure(text=f"剩余字数: {self.current_user.get('word_balance', 0)}")
         else:
             self.membership_status_label.configure(text="普通用户", text_color=self.theme['text_light'])
             self.word_balance_label.configure(text=f"剩余字数: {self.current_user.get('word_balance', 0)}")
+
 
     def _on_context_mode_switch(self, mode):
         if mode == 'smart' and self.use_smart_context_var.get():
@@ -933,8 +950,9 @@ class AiWriterApp(ctk.CTk):
         api_frame = ctk.CTkFrame(main_frame, fg_color=self.theme['card'], border_width=1, border_color=self.theme['border'], corner_radius=12)
         api_frame.pack(fill="x", pady=10)
         
-        is_member = self.current_user.get('is_member', False)
-        if is_member:
+        has_api_access = self.current_user.get('membership_level') in ['standard', 'premium']
+
+        if has_api_access:
             api_frame.grid_columnconfigure(1, weight=1)
             ctk.CTkLabel(api_frame, text="API Key:", font=self.FONT_H2, text_color=self.theme['text_h2']).grid(row=0, column=0, padx=20, pady=15, sticky="w")
             win.api_key_entry = ctk.CTkEntry(api_frame, font=self.FONT_BODY, corner_radius=8); win.api_key_entry.grid(row=0, column=1, padx=20, pady=15, sticky="ew")
@@ -1011,7 +1029,7 @@ class AiWriterApp(ctk.CTk):
             del self.user_prompts["market"][name]; self._update_settings_prompt_lists_ui(); self._update_prompt_menu_options()
 
     def save_settings(self):
-        if self.current_user.get('is_member', False):
+        if self.current_user.get('membership_level') in ['standard', 'premium']:
             self.app_config.update({'api_key': self.settings_window.api_key_entry.get(), 'api_base_url': self.settings_window.api_url_entry.get(), 'ai_model': self.settings_window.model_entry.get()})
         save_app_config(self.app_config, self.app_data_path); save_user_prompts(self.app_data_path, self.current_user['email'], self.user_prompts)
         self._update_generation_controls(); self._update_prompt_menu_options(); self.settings_window.destroy()
@@ -1465,8 +1483,8 @@ class AiWriterApp(ctk.CTk):
         prompt = tpl.format(context=ctx, requirements=req)
 
         sel_model = self.system_model_var.get()
-        is_mem = self.current_user.get('is_member', False)
-        use_custom_model = is_mem and "自定义" in sel_model
+        membership_level = self.current_user.get('membership_level')
+        use_custom_model = membership_level in ['standard', 'premium'] and "自定义" in sel_model
 
         if use_custom_model:
             generate_ai_content_stream(self.app_config["api_key"], self.app_config["api_base_url"], self.app_config["ai_model"], prompt, lambda: self.stop_generation_flag, self._stream, self._on_gen_end)
@@ -1495,8 +1513,12 @@ class AiWriterApp(ctk.CTk):
             self.textbox.insert(tk.END, "\n\n[生成被用户手动停止]")
         
         if not err and not self.stop_generation_flag:
-            if sys and res:
+            # Word deduction logic: Deduct if it was a system call AND the user is NOT a premium member
+            if sys and res and self.current_user.get('membership_level') != 'premium':
                 threading.Thread(target=lambda: requests.post(f"{SERVER_URL}/user/deduct_words", json={"email": self.current_user['email'], "count": len(res)}), daemon=True).start()
+                # We might want to fetch the user profile again to update the word count UI
+                self.after(1000, self._fetch_profile) 
+
             self.save_current_chapter()
 
     def open_account_settings_window(self):
@@ -1534,7 +1556,10 @@ class AiWriterApp(ctk.CTk):
     def _fetch_profile(self):
         try:
             r = requests.get(f"{SERVER_URL}/user/profile/{self.current_user['email']}").json()
-            if r.get("success"): self.current_user = r.get("user"); self.after(0, self._update_user_status_ui); self.after(0, self._update_generation_controls)
+            if r.get("success"):
+                self.current_user = r.get("user")
+                self.after(0, self._update_user_status_ui)
+                self.after(0, self._update_generation_controls)
         except: pass
 
     def save_account_settings(self, nu, op, np, cp):
