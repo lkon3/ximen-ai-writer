@@ -21,7 +21,7 @@ jobs:
     - name: Compile with Nuitka
       # 注意：这里添加了 --assume-yes-for-downloads 自动确认下载编译器
       run: |
-        python -m nuitka --standalone --onefile --enable-plugin=tk-inter --include-package=customtkinter --include-package=docx --windows-console-mode=disable --assume-yes-for-downloads --output-dir=build 2.py
+        python -m nuitka --standalone --onefile --enable-plugin=tk-inter --include-package=customtkinter --include-package=docx --windows-console-mode=disable --windows-icon-from-ico=favicon.ico --assume-yes-for-downloads --output-dir=build 2.py
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
